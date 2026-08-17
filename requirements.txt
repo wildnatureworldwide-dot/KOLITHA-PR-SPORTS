@@ -1,6 +1,4 @@
 streamlit
 requests
-streamlit
-requests
 pandas
-numpy
+scipy
