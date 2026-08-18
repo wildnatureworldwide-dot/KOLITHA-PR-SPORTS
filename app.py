@@ -1,139 +1,113 @@
 import streamlit as st
 import requests
 import pandas as pd
-import numpy as np
 
-st.set_page_config(page_title="Koli's AI Sports Predictor", page_icon="🏆", layout="centered")
+st.set_page_config(page_title="Koli's Live AI Predictor", page_icon="🏆", layout="centered")
 
-# App Header with User Name "Koli"
-st.markdown("<h2 style='text-align: center; color: #38BDF8;'>🏆 Koli's AI Sports Predictor Pro</h2>", unsafe_allow_html=True)
-st.caption("🔥 Developed & Powered by **Koli** | Smart Betting Value Predictor")
+st.markdown("<h2 style='text-align: center; color: #38BDF8;'>🏆 Koli's Real-Time AI Sports Predictor</h2>", unsafe_allow_html=True)
+st.caption("🔥 Developed by **Koli** | Automated Daily ESPN Live Feeds")
 
-# Sidebar
+# Sidebar Controls
 st.sidebar.header("⚙️ App Controls")
-selected_sport = st.sidebar.radio("🎯 ක්‍රීඩාව තෝරන්න:", ["⚽ Football", "🏏 Cricket"])
+selected_sport = st.sidebar.radio("🎯 ක්‍රීඩාව තෝරන්න:", ["⚽ Football (EPL)", "🏏 Cricket (International)"])
 
-# ==========================================
-# ⚽ FOOTBALL PREDICTION & BET RECOMMENDATION
-# ==========================================
-if selected_sport == "⚽ Football":
-    st.subheader("⚽ Football Live & Recommended Bets")
-    
-    football_matches = [
-        {"home": "Real Madrid", "away": "Barcelona", "league": "La Liga"},
-        {"home": "Manchester City", "away": "Arsenal", "league": "Premier League"},
-        {"home": "Bayern Munich", "away": "Dortmund", "league": "Bundesliga"},
-        {"home": "Liverpool", "away": "Chelsea", "league": "Premier League"}
-    ]
-    
-    match_list = [f"⚽ {m['home']} vs {m['away']}" for m in football_matches]
-    selected_idx = st.selectbox("🎯 Target Football Match එක තෝරන්න:", range(len(match_list)), format_func=lambda x: match_list[x])
-    
-    match = football_matches[selected_idx]
-    home, away = match['home'], match['away']
-    
-    # Mathematical Calculations
-    elo_h = 1800 + (sum(ord(c) for c in home) % 150) + 100
-    elo_a = 1750 + (sum(ord(c) for c in away) % 150)
-    
-    prob_h = round((1 / (1 + 10 ** ((elo_a - elo_h) / 400))) * 100, 1)
-    prob_a = round(100 - prob_h, 1)
-    
-    xg_h = round(prob_h * 2.8 / 100, 2)
-    xg_a = round(prob_a * 2.8 / 100, 2)
-    total_xg = round(xg_h + xg_a, 2)
-    
-    # Recommended Bet Logic
-    if prob_h > 62:
-        rec_bet = f"🔥 Straight Win: **{home}**"
-        risk_level = "Low Risk (Safe)"
-    elif prob_a > 62:
-        rec_bet = f"🔥 Straight Win: **{away}**"
-        risk_level = "Low Risk (Safe)"
-    elif total_xg > 2.5:
-        rec_bet = "⚽ **Over 2.5 Total Goals**"
-        risk_level = "Medium Risk (Value Bet)"
+# 1. Fetch Today's Dynamic Live Matches from ESPN Public API (No API Key Required)
+@st.cache_data(ttl=300) # Every 5 minutes auto refresh
+def fetch_espn_live_matches(sport_type):
+    if sport_type == "soccer":
+        url = "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
     else:
-        rec_bet = f"🛡️ **Double Chance: {home} or Draw**"
-        risk_level = "Low Risk (Safe)"
-
-    st.divider()
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(f"🚩 {home}", f"{prob_h}%")
-        st.progress(prob_h / 100)
-    with col2:
-        st.metric(f"🚩 {away}", f"{prob_a}%")
-        st.progress(prob_a / 100)
+        url = "https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=cricket"
         
-    # Koli's Recommended Bet Box
-    st.info(f"💡 **Koli's Recommended Bet:** {rec_bet}\n\n📊 **Risk Level:** `{risk_level}`")
-    
-    df = pd.DataFrame({
-        "Metric": ["Elo Rating", "Expected Goals (xG)", "Winning Chance"],
-        home: [elo_h, xg_h, f"{prob_h}%"],
-        away: [elo_a, xg_a, f"{prob_a}%"]
-    })
-    st.dataframe(df, use_container_width=True)
+    try:
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            events = data.get('events', [])
+            parsed_matches = []
+            for e in events:
+                name = e.get('name', '')
+                competitors = e.get('competitions', [{}])[0].get('competitors', [])
+                if len(competitors) >= 2:
+                    t1 = competitors[0].get('team', {}).get('displayName', 'Team A')
+                    t2 = competitors[1].get('team', {}).get('displayName', 'Team B')
+                    status = e.get('status', {}).get('type', {}).get('detail', 'Upcoming')
+                    parsed_matches.append({"home": t1, "away": t2, "status": status})
+            return parsed_matches
+    except Exception:
+        pass
+    return []
 
 # ==========================================
-# 🏏 CRICKET PREDICTION & BET RECOMMENDATION
+# ⚽ FOOTBALL AUTOMATED LIVE SECTION
 # ==========================================
-elif selected_sport == "🏏 Cricket":
-    st.subheader("🏏 Cricket Live & Recommended Bets")
+if selected_sport == "⚽ Football (EPL)":
+    st.subheader("⚽ Live & Today's Football Matches")
+    matches = fetch_espn_live_matches("soccer")
     
-    cricket_matches = [
-        {"team_a": "Sri Lanka", "team_b": "India"},
-        {"team_a": "Australia", "team_b": "England"},
-        {"team_a": "Chennai Super Kings", "team_b": "Mumbai Indians"},
-        {"team_a": "Pakistan", "team_b": "South Africa"}
-    ]
-    
-    c_list = [f"🏏 {m['team_a']} vs {m['team_b']}" for m in cricket_matches]
-    c_idx = st.selectbox("🎯 Target Cricket Match එක තෝරන්න:", range(len(c_list)), format_func=lambda x: c_list[x])
-    
-    c_match = cricket_matches[c_idx]
-    team_a, team_b = c_match['team_a'], c_match['team_b']
-    
-    # Cricket Match Controls
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🏏 Match Conditions")
-    toss = st.sidebar.radio("Toss දිනූ කණ්ඩායම:", [team_a, team_b])
-    batting = st.sidebar.radio("පළමුව Bat කරන්නේ:", [team_a, team_b])
-    pitch = st.sidebar.selectbox("Pitch ස්වභාවය:", ["Balanced", "Batting Friendly", "Bowling Friendly"])
-    
-    rating_a = 1500 + (sum(ord(c) for c in team_a) % 200) + (35 if toss == team_a else -35)
-    rating_b = 1500 + (sum(ord(c) for c in team_b) % 200)
-    
-    win_a = round(1 / (1 + 10 ** ((rating_b - rating_a) / 400)) * 100, 1)
-    win_b = round(100 - win_a, 1)
-    
-    runs_1st = int(165 + (win_a - 50) * 0.7) if batting == team_a else int(165 + (win_b - 50) * 0.7)
-    
-    # Cricket Bet Recommendation Logic
-    winner = team_a if win_a > win_b else team_b
-    if pitch == "Batting Friendly":
-        rec_cricket_bet = f"🔥 **1st Innings Score Over {runs_1st - 10}.5 Runs**"
-    elif pitch == "Bowling Friendly":
-        rec_cricket_bet = f"🔥 **1st Innings Score Under {runs_1st + 10}.5 Runs**"
+    if matches:
+        match_options = [f"⚽ {m['home']} vs {m['away']} [{m['status']}]" for m in matches]
+        s_idx = st.selectbox("🎯 අද පැවැත්වෙන Target Match එක තෝරන්න:", range(len(match_options)), format_func=lambda x: match_options[x])
+        
+        home = matches[s_idx]['home']
+        away = matches[s_idx]['away']
+        
+        # Calculation
+        elo_h = 1800 + (sum(ord(c) for c in home) % 120) + 50
+        elo_a = 1750 + (sum(ord(c) for c in away) % 120)
+        
+        prob_h = round((1 / (1 + 10 ** ((elo_a - elo_h) / 400))) * 100, 1)
+        prob_a = round(100 - prob_h, 1)
+        
+        rec_bet = f"🔥 Match Winner: **{home if prob_h > prob_a else away}**" if abs(prob_h - prob_a) > 15 else "🛡️ **Double Chance / Draw**"
+        
+        st.divider()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(f"🚩 {home}", f"{prob_h}%")
+            st.progress(prob_h / 100)
+        with col2:
+            st.metric(f"🚩 {away}", f"{prob_a}%")
+            st.progress(prob_a / 100)
+            
+        st.info(f"💡 **Koli's Recommended Bet:** {rec_bet}")
     else:
-        rec_cricket_bet = f"🏆 **Match Winner: {winner}**"
+        st.warning("අද දිනයේ Live/Upcoming Football Matches කිසිවක් නොමැත හෝ Data Load වෙමින් පවතී.")
 
-    st.divider()
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(f"🥇 {team_a}", f"{win_a}%")
-        st.progress(win_a / 100)
-    with col2:
-        st.metric(f"🥈 {team_b}", f"{win_b}%")
-        st.progress(win_b / 100)
-        
-    # Koli's Recommended Bet Box
-    st.info(f"💡 **Koli's Recommended Bet:** {rec_cricket_bet}\n\n🎯 **Projected 1st Innings Score:** `{runs_1st} Runs`")
+# ==========================================
+# 🏏 CRICKET AUTOMATED LIVE SECTION
+# ==========================================
+elif selected_sport == "🏏 Cricket (International)":
+    st.subheader("🏏 Live & Today's Cricket Matches")
+    c_matches = fetch_espn_live_matches("cricket")
     
-    df = pd.DataFrame({
-        "Factor": ["Team Rating", "Toss Advantage", "Win Prob %"],
-        team_a: [rating_a, "Yes" if toss == team_a else "No", f"{win_a}%"],
-        team_b: [rating_b, "Yes" if toss == team_b else "No", f"{win_b}%"]
-    })
-    st.dataframe(df, use_container_width=True)
+    if c_matches:
+        c_options = [f"🏏 {m['home']} vs {m['away']} [{m['status']}]" for m in c_matches]
+        c_idx = st.selectbox("🎯 අද පැවැත්වෙන Target Match එක තෝරන්න:", range(len(c_options)), format_func=lambda x: c_options[x])
+        
+        team_a = c_matches[c_idx]['home']
+        team_b = c_matches[c_idx]['away']
+        
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🏏 Match Controls")
+        toss = st.sidebar.radio("Toss දිනූ කණ්ඩායම:", [team_a, team_b])
+        pitch = st.sidebar.selectbox("Pitch ස්වභාවය:", ["Balanced", "Batting Friendly", "Bowling Friendly"])
+        
+        rating_a = 1500 + (sum(ord(c) for c in team_a) % 180) + (30 if toss == team_a else -30)
+        rating_b = 1500 + (sum(ord(c) for c in team_b) % 180)
+        
+        win_a = round(1 / (1 + 10 ** ((rating_b - rating_a) / 400)) * 100, 1)
+        win_b = round(100 - win_a, 1)
+        
+        st.divider()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(f"🥇 {team_a}", f"{win_a}%")
+            st.progress(win_a / 100)
+        with col2:
+            st.metric(f"🥈 {team_b}", f"{win_b}%")
+            st.progress(win_b / 100)
+            
+        st.info(f"💡 **Koli's Recommended Bet:** 🏆 Match Winner: **{team_a if win_a > win_b else team_b}**")
+    else:
+        st.warning("අද දිනයේ Live/Upcoming Cricket Matches කිසිවක් නොමැත හෝ Data Load වෙමින් පවතී.")
