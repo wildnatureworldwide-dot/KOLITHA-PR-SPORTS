@@ -11,7 +11,26 @@ st.markdown("<h2 style='text-align: center; color: #38BDF8;'>⚽ Koli's Enterpri
 st.caption("<p style='text-align: center;'>🔥 Zero Data-Leakage | Dynamic Pre-Match Rolling Averages | 1X2 Multi-Class XGBoost</p>", unsafe_allow_html=True)
 
 # ==========================================
-# 1. DATA PIPELINE & PRE-MATCH ROLLING STATS (NO LEAKAGE)
+# 1. TEAM NAME NORMALIZATION ENGINE
+# ==========================================
+def normalize_team_name(name):
+    """Normalizes team names to fix API vs Dataset mismatches (e.g. Man City vs Manchester City)"""
+    clean_name = str(name).lower().strip()
+    mapping = {
+        'man city': 'manchester city',
+        'man utd': 'manchester united',
+        'man united': 'manchester united',
+        'spurs': 'tottenham',
+        'tottenham hotspur': 'tottenham',
+        'wolves': 'wolverhampton wanderers',
+        'wolverhampton': 'wolverhampton wanderers',
+        'west ham united': 'west ham',
+        'newcastle united': 'newcastle'
+    }
+    return mapping.get(clean_name, clean_name)
+
+# ==========================================
+# 2. DATA PIPELINE & PRE-MATCH ROLLING STATS
 # ==========================================
 @st.cache_resource
 def load_and_train_1x2_model():
@@ -21,9 +40,9 @@ def load_and_train_1x2_model():
         df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
         df = df.sort_values('Date').dropna(subset=['FTHG', 'FTAG', 'FTR'])
     except Exception:
-        # Structured Fallback Matrix (Simulated Seasons with Pre-Match Structure)
+        # Structured Fallback Matrix if GitHub raw link fails
         dates = pd.date_range(start='2023-08-01', periods=380, freq='D')
-        teams = ['Arsenal', 'Chelsea', 'Liverpool', 'Man City', 'Man United', 'Real Madrid', 'Barcelona']
+        teams = ['Arsenal', 'Chelsea', 'Liverpool', 'Manchester City', 'Manchester United', 'Real Madrid', 'Barcelona']
         data = []
         for d in dates:
             ht, at = np.random.choice(teams, size=2, replace=False)
@@ -32,18 +51,16 @@ def load_and_train_1x2_model():
             data.append({'Date': d, 'HomeTeam': ht, 'AwayTeam': at, 'FTHG': hg, 'FTAG': ag, 'FTR': ftr})
         df = pd.DataFrame(data)
 
-    # Multi-Class Target Mapping: 2 = Home Win (1), 1 = Draw (X), 0 = Away Win (2)
     target_map = {'H': 2, 'D': 1, 'A': 0}
     df['Target'] = df['FTR'].map(target_map)
 
-    # Compute Historical Pre-Match Rolling Averages
     team_stats = {}
     processed_rows = []
 
     for idx, row in df.iterrows():
-        ht, at = row['HomeTeam'], row['AwayTeam']
+        ht = normalize_team_name(row['HomeTeam'])
+        at = normalize_team_name(row['AwayTeam'])
         
-        # Extract pre-match rolling state
         h_roll = team_stats.get(ht, {'gf': 1.5, 'ga': 1.1, 'matches': 1})
         a_roll = team_stats.get(at, {'gf': 1.4, 'ga': 1.2, 'matches': 1})
         
@@ -54,7 +71,6 @@ def load_and_train_1x2_model():
             'Target': row['Target']
         })
         
-        # Post-match statistical update
         for t, gf, ga in [(ht, row['FTHG'], row['FTAG']), (at, row['FTAG'], row['FTHG'])]:
             if t not in team_stats:
                 team_stats[t] = {'gf': float(gf), 'ga': float(ga), 'matches': 1}
@@ -72,7 +88,6 @@ def load_and_train_1x2_model():
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # Multi-Class Softprob XGBoost Classifier
     model = XGBClassifier(
         n_estimators=150,
         max_depth=4,
@@ -88,7 +103,7 @@ def load_and_train_1x2_model():
 xgb_model, xgb_scaler, team_db = load_and_train_1x2_model()
 
 # ==========================================
-# 2. API ODDS FETCH & PARSER
+# 3. API ODDS FETCH & PARSER (FIXED FUNCTION NAME)
 # ==========================================
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_1x2_odds(api_key):
@@ -103,7 +118,8 @@ def fetch_1x2_odds(api_key):
         pass
     return []
 
-def 1x2_odds_to_prob(ho, do, ao):
+# FIX: Renamed from '1x2_odds_to_prob' to 'convert_1x2_odds_to_prob' to fix SyntaxError
+def convert_1x2_odds_to_prob(ho, do, ao):
     if ho <= 1.0 or do <= 1.0 or ao <= 1.0:
         return 33.3, 33.3, 33.3
     raw_h, raw_d, raw_a = 1/ho, 1/do, 1/ao
@@ -111,7 +127,7 @@ def 1x2_odds_to_prob(ho, do, ao):
     return round((raw_h/margin)*100, 1), round((raw_d/margin)*100, 1), round((raw_a/margin)*100, 1)
 
 # ==========================================
-# 3. INTERFACE & FEATURE VECTOR CONSTRUCTION
+# 4. INTERFACE & FEATURE VECTOR CONSTRUCTION
 # ==========================================
 st.sidebar.header("⚙️ Feature Engineering & Controls")
 odds_key = st.sidebar.text_input("🔑 The Odds API Key (Optional):", type="password")
@@ -124,7 +140,7 @@ a_squad_idx = st.sidebar.slider("Away Squad Fitness Index:", 0.5, 1.2, 1.0, 0.05
 raw_odds = fetch_1x2_odds(odds_key)
 active_matches = [
     {"home": "Real Madrid", "away": "Barcelona", "ho": 2.10, "do": 3.40, "ao": 3.20},
-    {"home": "Man City", "away": "Arsenal", "ho": 1.95, "do": 3.50, "ao": 3.60},
+    {"home": "Manchester City", "away": "Arsenal", "ho": 1.95, "do": 3.50, "ao": 3.60},
     {"home": "Liverpool", "away": "Chelsea", "ho": 1.80, "do": 3.80, "ao": 4.00}
 ]
 
@@ -144,11 +160,14 @@ labels = [f"{m['home']} vs {m['away']} (1X2 Odds: {m['ho']} | {m['do']} | {m['ao
 sel_idx = st.selectbox("Select Match to Analyze:", range(len(labels)), format_func=lambda x: labels[x])
 curr = active_matches[sel_idx]
 
-# Fetch Dynamic Pre-Match Rolling Stats
-h_stats = team_db.get(curr['home'], {'gf': 1.8, 'ga': 1.0})
-a_stats = team_db.get(curr['away'], {'gf': 1.6, 'ga': 1.2})
+# Fetch Dynamic Pre-Match Rolling Stats with Normalized Team Names
+norm_home = normalize_team_name(curr['home'])
+norm_away = normalize_team_name(curr['away'])
 
-# Construct ML Feature Vector with Lineup Index
+h_stats = team_db.get(norm_home, {'gf': 1.8, 'ga': 1.0})
+a_stats = team_db.get(norm_away, {'gf': 1.6, 'ga': 1.2})
+
+# Construct ML Feature Vector
 raw_vector = np.array([[
     h_stats['gf'] * h_squad_idx,
     h_stats['ga'] / h_squad_idx,
@@ -164,10 +183,10 @@ ai_prob_a = round(probs[0] * 100, 1)
 ai_prob_d = round(probs[1] * 100, 1)
 ai_prob_h = round(probs[2] * 100, 1)
 
-mkt_prob_h, mkt_prob_d, mkt_prob_a = 1x2_odds_to_prob(curr['ho'], curr['do'], curr['ao'])
+mkt_prob_h, mkt_prob_d, mkt_prob_a = convert_1x2_odds_to_prob(curr['ho'], curr['do'], curr['ao'])
 
 # ==========================================
-# 4. ANALYTICS & 1X2 VALUE EDGE
+# 5. ANALYTICS & 1X2 VALUE EDGE
 # ==========================================
 st.divider()
 st.subheader(f"📊 1X2 Probabilities: {curr['home']} vs {curr['away']}")
@@ -208,6 +227,6 @@ else:
 st.json({
     "Multi-Class Objective": "multi:softprob (3 Classes: Home Win, Draw, Away Win)",
     "Data-Leakage Prevention": "Strict Pre-Match Rolling Averages Engine Active",
-    "Extracted Dynamic Stats": f"{curr['home']} Roll GF/GA: [{h_stats['gf']:.2f}, {h_stats['ga']:.2f}] | {curr['away']} Roll GF/GA: [{a_stats['gf']:.2f}, {a_stats['ga']:.2f}]",
+    "Normalized Team Keys": f"{norm_home} vs {norm_away}",
     "1X2 Market Value Margins": f"Home ({edge_h}%) | Draw ({edge_d}%) | Away ({edge_a}%)"
 })
