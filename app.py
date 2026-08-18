@@ -10,11 +10,16 @@ st.set_page_config(page_title="Koli's Pro 1X2 XGBoost Engine", page_icon="⚽", 
 st.markdown("<h2 style='text-align: center; color: #38BDF8;'>⚽ Koli's Enterprise 1X2 Multi-Class XGBoost Engine</h2>", unsafe_allow_html=True)
 st.caption("<p style='text-align: center;'>🔥 Zero Data-Leakage | Dynamic Pre-Match Rolling Averages | 1X2 Multi-Class XGBoost</p>", unsafe_allow_html=True)
 
+# Helper function to prevent progress bar crashes
+def safe_progress_val(percentage):
+    """Converts 0-100 percentage to safe 0.0-1.0 float for st.progress"""
+    val = percentage / 100.0
+    return max(0.0, min(1.0, float(val)))
+
 # ==========================================
 # 1. TEAM NAME NORMALIZATION ENGINE
 # ==========================================
 def normalize_team_name(name):
-    """Normalizes team names to fix API vs Dataset mismatches (e.g. Man City vs Manchester City)"""
     clean_name = str(name).lower().strip()
     mapping = {
         'man city': 'manchester city',
@@ -40,7 +45,6 @@ def load_and_train_1x2_model():
         df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
         df = df.sort_values('Date').dropna(subset=['FTHG', 'FTAG', 'FTR'])
     except Exception:
-        # Structured Fallback Matrix if GitHub raw link fails
         dates = pd.date_range(start='2023-08-01', periods=380, freq='D')
         teams = ['Arsenal', 'Chelsea', 'Liverpool', 'Manchester City', 'Manchester United', 'Real Madrid', 'Barcelona']
         data = []
@@ -103,7 +107,7 @@ def load_and_train_1x2_model():
 xgb_model, xgb_scaler, team_db = load_and_train_1x2_model()
 
 # ==========================================
-# 3. API ODDS FETCH & PARSER (FIXED FUNCTION NAME)
+# 3. API ODDS FETCH & PARSER
 # ==========================================
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_1x2_odds(api_key):
@@ -118,7 +122,6 @@ def fetch_1x2_odds(api_key):
         pass
     return []
 
-# FIX: Renamed from '1x2_odds_to_prob' to 'convert_1x2_odds_to_prob' to fix SyntaxError
 def convert_1x2_odds_to_prob(ho, do, ao):
     if ho <= 1.0 or do <= 1.0 or ao <= 1.0:
         return 33.3, 33.3, 33.3
@@ -160,7 +163,7 @@ labels = [f"{m['home']} vs {m['away']} (1X2 Odds: {m['ho']} | {m['do']} | {m['ao
 sel_idx = st.selectbox("Select Match to Analyze:", range(len(labels)), format_func=lambda x: labels[x])
 curr = active_matches[sel_idx]
 
-# Fetch Dynamic Pre-Match Rolling Stats with Normalized Team Names
+# Fetch Dynamic Pre-Match Rolling Stats
 norm_home = normalize_team_name(curr['home'])
 norm_away = normalize_team_name(curr['away'])
 
@@ -186,7 +189,7 @@ ai_prob_h = round(probs[2] * 100, 1)
 mkt_prob_h, mkt_prob_d, mkt_prob_a = convert_1x2_odds_to_prob(curr['ho'], curr['do'], curr['ao'])
 
 # ==========================================
-# 5. ANALYTICS & 1X2 VALUE EDGE
+# 5. ANALYTICS & SAFE PROGRESS DISPLAY
 # ==========================================
 st.divider()
 st.subheader(f"📊 1X2 Probabilities: {curr['home']} vs {curr['away']}")
@@ -196,19 +199,19 @@ with c1:
     st.write(f"### 🚩 Home ({curr['home']})")
     st.metric("🧠 ML Win %", f"{ai_prob_h}%")
     st.metric("📊 Market %", f"{mkt_prob_h}%")
-    st.progress(ai_prob_h / 100)
+    st.progress(safe_progress_val(ai_prob_h))
 
 with c2:
     st.write("### ⚖️ Draw (X)")
     st.metric("🧠 ML Draw %", f"{ai_prob_d}%")
     st.metric("📊 Market %", f"{mkt_prob_d}%")
-    st.progress(ai_prob_d / 100)
+    st.progress(safe_progress_val(ai_prob_d))
 
 with c3:
     st.write(f"### 🚩 Away ({curr['away']})")
     st.metric("🧠 ML Win %", f"{ai_prob_a}%")
     st.metric("📊 Market %", f"{mkt_prob_a}%")
-    st.progress(ai_prob_a / 100)
+    st.progress(safe_progress_val(ai_prob_a))
 
 st.markdown("---")
 edge_h = round(ai_prob_h - mkt_prob_h, 1)
